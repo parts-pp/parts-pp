@@ -837,7 +837,14 @@ def build_legal_shipping_block(method: str, fee_sar: str, eta: str, included: st
         f"قيمة الشحن: {fee_txt}"
     )
 
-def build_official_quote_text(order_id: str, goods_amount_sar: str, parts_type: str, ship_block: str, availability: str) -> str:
+def build_official_quote_text(
+    order_id: str,
+    client_name: str,
+    goods_amount_sar: str,
+    parts_type: str,
+    ship_block: str,
+    availability: str,
+) -> str:
     return (
         "💰 عرض سعر رسمي\n"
         f"👤 العميل: {client_name}\n"
@@ -849,6 +856,7 @@ def build_official_quote_text(order_id: str, goods_amount_sar: str, parts_type: 
         f"⏳ مدة التجهيز: {availability}\n\n"
         "يرجى مراجعة العرض ثم اختيار القرار من الازرار بالاسفل في حالة قبول العرض سيتم فتح قناة اتصال داخلي بين التاجر والعميل"
     )
+
 
 def quote_client_kb(order_id: str, trader_id: int) -> InlineKeyboardMarkup:
     tid = int(trader_id or 0)
@@ -4616,7 +4624,16 @@ async def finalize_quote_send(context: ContextTypes.DEFAULT_TYPE, trader_id: int
         return
 
     ship_block = build_legal_shipping_block(ship_method, fee_sar, ship_eta, ship_inc)
-    official = build_official_quote_text(order_id, goods_amount, parts_type, ship_block, availability)
+    # ✅ اسم العميل من الطلب (وليس من رسالة التاجر)
+    client_name = "—"
+    try:
+        ob0 = get_order_bundle(order_id) or {}
+        o0 = (ob0.get("order") or {}) if isinstance(ob0, dict) else {}
+        client_name = (o0.get("user_name") or o0.get("client_name") or o0.get("name") or "").strip() or "—"
+    except Exception:
+        client_name = "—"
+
+    official = build_official_quote_text(order_id, client_name, goods_amount, parts_type, ship_block, availability)
 
     # ✅ تعديل المطلوب: تفصيل تسعير القطع + إجمالي القطع (حسب quote_item_prices)
     try:
@@ -12803,8 +12820,7 @@ def build_app():
     app.add_handler(MessageHandler(filters.Regex(r"(?i)^pp25s$"), pp25s_cmd))  # بدون /
 
     # 🟢 [HANDLER] Support (/منصة)
-    app.add_handler(MessageHandler(filters.Regex(r"^/منصة(?:@\w+)?(?:\s|$)"), support_cmd))
-    app.add_handler(CommandHandler("help", support_cmd))
+    app.add_handler(CommandHandler(["h", "help", "منصة"], support_cmd))
 
     app.add_handler(ChatMemberHandler(trader_welcome_cb, ChatMemberHandler.CHAT_MEMBER))
 
