@@ -1,0 +1,87 @@
+import math
+import pandas as pd
+from supabase import create_client
+
+SUPABASE_URL = "https://jrscftcdnkqnpuwqfswg.supabase.co"
+
+EXCEL_FILE = "pp_data.xlsx"
+
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+
+def clean_scalar(v):
+    if v is None:
+        return None
+
+    try:
+        if pd.isna(v):
+            return None
+    except Exception:
+        pass
+
+    try:
+        if isinstance(v, float) and math.isnan(v):
+            return None
+    except Exception:
+        pass
+
+    s = str(v).strip()
+    if s == "" or s.lower() == "nan":
+        return None
+
+    return s
+
+
+def load_sheet(sheet_name: str) -> pd.DataFrame:
+    df = pd.read_excel(EXCEL_FILE, sheet_name=sheet_name, dtype=object)
+    df = df.astype(object)
+    df = df.where(pd.notnull(df), None)
+    return df
+
+
+def sanitize_row(row: dict) -> dict:
+    clean = {}
+    for k, v in row.items():
+        vv = clean_scalar(v)
+        if vv is not None:
+            clean[k] = vv
+    return clean
+
+
+def insert_rows(table: str, df: pd.DataFrame):
+    rows = df.to_dict(orient="records")
+    total = len(rows)
+    ok_count = 0
+    err_count = 0
+
+    for i, row in enumerate(rows, start=1):
+        try:
+            clean_row = sanitize_row(row)
+            if not clean_row:
+                print(f"SKIP {table}: row {i}/{total} empty")
+                continue
+
+            supabase.table(table).insert(clean_row).execute()
+            ok_count += 1
+            print(f"OK {table}: {i}/{total}")
+        except Exception as e:
+            err_count += 1
+            print(f"ERROR {table}: row {i}/{total}: {e}")
+
+    print(f"FINISH {table}: ok={ok_count}, errors={err_count}")
+
+
+def migrate():
+    sheets = [
+        "traders",
+    ]
+
+    for sheet in sheets:
+        print(f"START {sheet}")
+        df = load_sheet(sheet)
+        insert_rows(sheet, df)
+
+    print("DONE")
+
+if __name__ == "__main__":
+    migrate()
